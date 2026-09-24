@@ -388,12 +388,21 @@ class AnycubicM7ProCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("anycubic-m7pro-card")) {
-  customElements.define("anycubic-m7pro-card", AnycubicM7ProCard);
+// Two Lovelace resources pointing at this file with different query strings
+// are two separate modules to the browser, so this block can run more than
+// once. Each guard therefore stands on its own: checking only whether the
+// element was defined still let a second entry reach the card picker, which
+// showed the card twice.
+const CARD_TYPE = "anycubic-m7pro-card";
 
-  window.customCards = window.customCards || [];
+if (!customElements.get(CARD_TYPE)) {
+  customElements.define(CARD_TYPE, AnycubicM7ProCard);
+}
+
+window.customCards = window.customCards || [];
+if (!window.customCards.some((card) => card.type === CARD_TYPE)) {
   window.customCards.push({
-    type: "anycubic-m7pro-card",
+    type: CARD_TYPE,
     name: "Anycubic M7 Pro Card",
     description: "Status, progress and job preview for an Anycubic M7 Pro.",
     preview: true,

@@ -60,6 +60,7 @@ class FakeResources:
         self.store = store
         self.created: list[dict] = []
         self.updated: list[tuple[str, dict]] = []
+        self.deleted: list[str] = []
         self.info_calls = 0
 
     async def async_get_info(self) -> dict:
@@ -81,6 +82,10 @@ class FakeResources:
             if item["id"] == item_id:
                 item.update(data)
         return {}
+
+    async def async_delete_item(self, item_id: str) -> None:
+        self.deleted.append(item_id)
+        self._items = [i for i in self._items if i["id"] != item_id]
 
 
 class FakeHass:
@@ -118,10 +123,19 @@ def _install_stubs() -> None:
     core = mod("homeassistant.core")
     core.HomeAssistant = object
 
+    # Read the real manifest so the expected urls cannot drift from the
+    # shipped version every time it is bumped.
+    import json  # noqa: PLC0415
+
+    manifest_version = json.loads(
+        (COMPONENT / "manifest.json").read_text(encoding="utf-8")
+    )["version"]
+
     loader = mod("homeassistant.loader")
     loader.async_get_loaded_integration = lambda hass, domain: types.SimpleNamespace(
-        version="1.2.1"
+        version=manifest_version
     )
+    globals()["VERSION"] = manifest_version
 
     pkg = types.ModuleType("_anycubic_fe")
     pkg.__path__ = [str(COMPONENT)]
@@ -170,7 +184,7 @@ async def main() -> None:
     check("add_extra_js_url called once", len(EXTRA_JS) == 1, str(EXTRA_JS))
     check(
         "url carries a version for cache busting",
-        EXTRA_JS and EXTRA_JS[0] == f"{fe.CARD_URL}?v=1.2.1",
+        EXTRA_JS and EXTRA_JS[0] == f"{fe.CARD_URL}?v={VERSION}",
         EXTRA_JS[0] if EXTRA_JS else "",
     )
     check("lovelace resource created", len(resources.created) == 1, str(resources.created))
@@ -178,7 +192,7 @@ async def main() -> None:
         check("registered as a module", resources.created[0]["res_type"] == "module")
         check(
             "resource url matches",
-            resources.created[0]["url"] == f"{fe.CARD_URL}?v=1.2.1",
+            resources.created[0]["url"] == f"{fe.CARD_URL}?v={VERSION}",
             resources.created[0]["url"],
         )
     check("marked as registered", hass.data.get(fe._REGISTERED) is True)
@@ -203,18 +217,41 @@ async def main() -> None:
     if resources.updated:
         check(
             "updated to the new version",
-            resources.updated[0][1]["url"] == f"{fe.CARD_URL}?v=1.2.1",
+            resources.updated[0][1]["url"] == f"{fe.CARD_URL}?v={VERSION}",
             resources.updated[0][1]["url"],
         )
 
     print("\nalready correct: left alone")
     resources = FakeResources(
-        [{"id": "abc", "res_type": "module", "url": f"{fe.CARD_URL}?v=1.2.1"}]
+        [{"id": "abc", "res_type": "module", "url": f"{fe.CARD_URL}?v={VERSION}"}]
     )
     hass = FakeHass(resources)
     await fe.async_register_card(hass)
     check("no create", not resources.created)
     check("no update", not resources.updated)
+
+    print("\nduplicate resources for our file are cleaned up")
+    # Reported in the wild: a hand-added resource alongside the registered
+    # one meant the browser loaded the module twice and the picker listed
+    # the card twice.
+    resources = FakeResources(
+        [
+            {"id": "a", "res_type": "module", "url": f"{fe.CARD_URL}?v=1.2.3"},
+            {"id": "b", "res_type": "module", "url": f"{fe.CARD_URL}?v=3"},
+            {"id": "c", "res_type": "module", "url": fe.CARD_URL},
+        ]
+    )
+    hass = FakeHass(resources)
+    await fe.async_register_card(hass)
+    check("extras removed", sorted(resources.deleted) == ["b", "c"], str(resources.deleted))
+    check("exactly one left", len(resources.async_items()) == 1,
+          str(resources.async_items()))
+    check("no duplicate created", not resources.created)
+    check(
+        "survivor points at this version",
+        resources.async_items()[0]["url"] == f"{fe.CARD_URL}?v={VERSION}",
+        resources.async_items()[0]["url"],
+    )
 
     print("\nunrelated resources are not touched")
     resources = FakeResources(
@@ -253,3 +290,5 @@ async def main() -> None:
 
 
 asyncio.run(main())
+
+

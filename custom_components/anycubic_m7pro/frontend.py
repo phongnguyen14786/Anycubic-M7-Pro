@@ -81,15 +81,34 @@ async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
             await resources.async_get_info()
 
         existing: list[dict[str, Any]] = list(resources.async_items() or [])
-        for item in existing:
-            current = str(item.get("url") or "")
-            if current.split("?")[0] != CARD_URL:
-                continue
+        ours = [
+            item
+            for item in existing
+            if str(item.get("url") or "").split("?")[0] == CARD_URL
+        ]
+
+        # More than one resource for this same file -- usually one added by
+        # hand alongside the one registered here. The browser treats each
+        # query string as a separate module, so the file loads twice and the
+        # card appears twice in the picker. Keep one.
+        for extra in ours[1:]:
+            try:
+                await resources.async_delete_item(extra["id"])
+                _LOGGER.info(
+                    "Removed a duplicate Lovelace resource for %s (%s)",
+                    CARD_URL,
+                    extra.get("url"),
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("Could not remove a duplicate resource: %s", err)
+
+        if ours:
+            current = str(ours[0].get("url") or "")
             if current == url:
                 return True
             # Same card, stale version query: re-point it rather than
             # accumulating one dead resource per release.
-            await resources.async_update_item(item["id"], {"url": url})
+            await resources.async_update_item(ours[0]["id"], {"url": url})
             _LOGGER.debug("Updated Lovelace resource to %s", url)
             return True
 

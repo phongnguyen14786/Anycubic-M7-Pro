@@ -154,6 +154,36 @@ check(
   globalThis.window.customCards.some((c) => c.type === "anycubic-m7pro-card")
 );
 check("getStubConfig works", typeof Card.getStubConfig() === "object");
+check(
+  "listed exactly once",
+  globalThis.window.customCards.filter((c) => c.type === "anycubic-m7pro-card")
+    .length === 1,
+  `${globalThis.window.customCards.length} entries`
+);
+
+{
+  // Two Lovelace resources pointing at this file with different query
+  // strings are two modules to the browser, so this whole file runs twice.
+  // That listed the card twice in the picker.
+  let threw = null;
+  try {
+    new Function(source)();
+  } catch (err) {
+    threw = err;
+  }
+  check("second evaluation does not throw", threw === null, threw?.message ?? "");
+  check(
+    "still listed exactly once after a double load",
+    globalThis.window.customCards.filter(
+      (c) => c.type === "anycubic-m7pro-card"
+    ).length === 1,
+    `${globalThis.window.customCards.filter((c) => c.type === "anycubic-m7pro-card").length} entries`
+  );
+  check(
+    "element definition survives",
+    typeof registry.get("anycubic-m7pro-card") === "function"
+  );
+}
 
 console.log("\nidle printer");
 {
