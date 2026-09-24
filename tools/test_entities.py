@@ -199,11 +199,19 @@ def state_from_files() -> PrinterState:
         entries = json.loads(status_file.read_text(encoding="utf-8"))["data"]
         status = entries[0] if entries else {}
     job = projects[0]
+    return _state(printer, status, job)
+
+
+def _state(printer, status, job):
+    """Build a PrinterState the way api.async_poll does."""
     return PrinterState(
         printer=printer,
         status=status,
         job=job,
-        message=api_mod._maybe_json(job.get("device_message")),
+        message=(
+            api_mod._maybe_json(job.get("settings"))
+            or api_mod._maybe_json(job.get("device_message"))
+        ),
     )
 
 
@@ -323,6 +331,42 @@ def main() -> None:
     if isinstance(finish, datetime):
         delta = (finish - datetime.now(timezone.utc)).total_seconds() / 60
         check("finish ~42 min out", 41 <= delta <= 43, f"{delta:.1f} min")
+
+    print("\nlive print (real capture, device_message is null mid-print)")
+    live_file = ROOT / "out" / "08-projects-live.json"
+    if live_file.exists():
+        live_job = json.loads(live_file.read_text(encoding="utf-8"))["data"][0]
+        check(
+            "device_message really is null while printing",
+            live_job.get("device_message") is None,
+            repr(live_job.get("device_message")),
+        )
+        lp = _state(idle.printer, idle.status, live_job)
+        lv = values(lp)
+        lb = binary_values(lp)
+        check("printing detected", lb["printing"] is True)
+        check("status printing", lv["status"] == "printing", lv["status"])
+        check("current layer from settings", lv["current_layer"] is not None,
+              str(lv["current_layer"]))
+        check("total layers from settings", lv["total_layers"] == 1085,
+              str(lv["total_layers"]))
+        check("exposure time from settings", lv["exposure_time"] == 1.5,
+              str(lv["exposure_time"]))
+        check("bottom exposure from settings", lv["bottom_exposure_time"] == 30,
+              str(lv["bottom_exposure_time"]))
+        check("bottom layers from settings", lv["bottom_layers"] == 5,
+              str(lv["bottom_layers"]))
+        check("layer height from settings", lv["layer_height"] == 0.03,
+              str(lv["layer_height"]))
+        check("lift height from settings", lv["lift_height"] == 6,
+              str(lv["lift_height"]))
+        check("model height from settings", round(lv["model_height"], 2) == 32.55,
+              str(lv["model_height"]))
+        check("job name present", lv["job_name"] is not None, str(lv["job_name"]))
+        check("time remaining present", lv["time_remaining"] is not None,
+              str(lv["time_remaining"]))
+    else:
+        check("live fixture present", False, "out/08-projects-live.json missing")
 
     print("\nepoch parsing")
     ep = sensor_mod._epoch

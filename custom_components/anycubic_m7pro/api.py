@@ -271,5 +271,15 @@ class AnycubicCloud:
             printer=printer,
             status=status,
             job=job,
-            message=_maybe_json(job.get("device_message")),
+            # Live layer/exposure data lives in the top-level `settings`
+            # field, which is present both while printing and after. The
+            # `device_message` field carries the same shape but is populated
+            # only once the job has finished -- during an active print it is
+            # null, which blanked every layer and exposure sensor at exactly
+            # the moment they matter. Prefer settings, fall back to
+            # device_message for any payload that only carries the latter.
+            message=(
+                _maybe_json(job.get("settings"))
+                or _maybe_json(job.get("device_message"))
+            ),
         )
