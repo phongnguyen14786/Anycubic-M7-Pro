@@ -171,6 +171,29 @@ console.log("\nidle printer");
   check("shows lifetime totals when idle", rows.includes("Total prints") && rows.includes("5"));
   check("shows film layers", rows.includes("Film layers") && rows.includes("2811"));
   check("no ETA row when idle", !rows.includes("ETA"));
+  // Regression: these rendered as a dash in the wild while the entity had a
+  // perfectly good value, because the payload behind them was empty.
+  check(
+    "last seen renders a time, not a dash",
+    rows.includes("Last seen") && !/Last seen<\/span><span class="v">—/.test(rows),
+    rows.match(/Last seen<\/span><span class="v">([^<]*)/)?.[1] ?? "missing"
+  );
+}
+
+console.log("\nidle but printersStatus came back empty");
+{
+  // Exactly the failure seen in the wild: printer/info is fine, so most
+  // rows fill, but the two fields fed by printersStatus have nothing.
+  const states = idleStates();
+  delete states[`sensor.${P}_last_seen`];
+  delete states[`sensor.${P}_printer_state`];
+  const card = render(states);
+  const rows = rowsOf(card);
+  check("does not throw", typeof card._el.pct.textContent === "string");
+  check("last seen falls back to a dash", rows.includes("Last seen"));
+  check("other rows still populated", rows.includes("2811"));
+  check("still reports Idle while online", card._el.pct.textContent === "Idle",
+        card._el.pct.textContent);
 }
 
 console.log("\nprinting");
@@ -204,6 +227,22 @@ console.log("\noffline printer");
   check(
     "reason prefix stripped",
     card._el.pct.textContent === "printer offline",
+    card._el.pct.textContent
+  );
+}
+
+console.log("\noffline with no printer_state entity");
+{
+  // Distinguishes the two ways the card can say the printer is away: the
+  // cloud's own wording, versus the generic fallback. Seeing the generic
+  // one in the wild is the signal that printersStatus returned nothing.
+  const states = idleStates();
+  states[`binary_sensor.${P}_online`] = s("off");
+  delete states[`sensor.${P}_printer_state`];
+  const card = render(states);
+  check(
+    "falls back to the generic word",
+    card._el.pct.textContent === "Offline",
     card._el.pct.textContent
   );
 }

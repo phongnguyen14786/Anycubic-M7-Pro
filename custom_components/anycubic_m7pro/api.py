@@ -240,14 +240,31 @@ class AnycubicCloud:
         # when the project list is briefly unavailable.
         try:
             status = await self.async_get_status(printer_id)
+            if not status:
+                # The call succeeded but this printer was not in the list.
+                # Silence here would leave "last seen" and "printer state"
+                # blank with nothing anywhere to explain why.
+                _LOGGER.warning(
+                    "Printer %s was not in the printersStatus response; "
+                    "'last seen' and 'printer state' will be blank",
+                    printer_id,
+                )
         except AnycubicError as err:
-            _LOGGER.debug("Could not fetch printer status: %s", err)
+            _LOGGER.warning(
+                "Could not fetch printer status (%s); 'last seen' and "
+                "'printer state' will be blank this poll",
+                err,
+            )
             status = {}
 
         try:
             job = await self.async_get_latest_job(printer_id)
         except AnycubicError as err:
-            _LOGGER.debug("Could not fetch latest job: %s", err)
+            _LOGGER.warning(
+                "Could not fetch the latest job (%s); job fields will be "
+                "blank this poll",
+                err,
+            )
             job = {}
 
         return PrinterState(
