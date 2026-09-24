@@ -14,10 +14,16 @@ REGION_INTERNATIONAL: Final = "international"
 REGION_CHINA: Final = "china"
 REGIONS: Final = [REGION_INTERNATIONAL, REGION_CHINA]
 
-# Anycubic's cloud polls comfortably at a minute; the web token this
-# integration uses is rate limited well above that and the printer's own state
-# does not change faster than the cloud is told about it.
-DEFAULT_SCAN_INTERVAL: Final = 60
+# A poll is three requests taking about 1.3 seconds in total, so at twenty
+# seconds the integration is talking to the cloud roughly 6% of the time and
+# idle the rest. Going much below this stacks requests against an
+# undocumented API with no published rate limit, for no gain: the printer
+# reports to the cloud on its own schedule, so polling faster than it
+# publishes only repeats the same answer.
+#
+# Real-time updates need MQTT, which Anycubic allows only for slicer-issued
+# tokens, not the web token this integration uses.
+DEFAULT_SCAN_INTERVAL: Final = 20
 
 # Print status codes, as the cloud reports them on a project.
 PRINT_STATUS: Final[dict[int, str]] = {

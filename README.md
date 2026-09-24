@@ -27,7 +27,13 @@ the only route, so cloud is what this does.
 
 ## What you get
 
-Updates every 60 seconds.
+Updates every 20 seconds. A poll is three HTTP GETs taking about 1.3 seconds in total, so the
+integration is talking to the cloud roughly 6% of the time and idle the rest.
+
+Faster than that needs MQTT, which Anycubic allows only for slicer-issued tokens — not the web
+token this integration uses. The desktop Photon Workshop app gets sub-second updates that way,
+over plaintext MQTT on port 1883. Polling faster than 20 seconds would mostly repeat the same
+answer anyway, since the printer reports to the cloud on its own schedule.
 
 ### Always available
 
@@ -169,17 +175,26 @@ than failing silently; paste a fresh token and it carries on.
 
 ## Testing
 
-Three scripts under [`tools/`](tools/), all runnable with `uv run` — no venv needed. They read
-the token from `secrets/token.txt` (gitignored).
+Everything under [`tools/`](tools/) runs with `uv run` or `node` — no venv, no build step. They
+read credentials from `secrets/` (gitignored).
 
 ```bash
 uv run tools/verify_minimal.py    # the cloud client works, standalone
 uv run tools/test_api.py          # the shipped api.py, against the live cloud
 uv run tools/test_entities.py     # entity logic, against real captured payloads
+uv run tools/test_frontend.py     # card registration and Lovelace resources
 uv run tools/probe_cloud.py       # sweep every read-only endpoint, report every field
 uv run tools/status.py            # live readout of every entity, right now
+uv run tools/ha_check.py          # a running HA: states, resources, log
 node tools/test_card.mjs          # dashboard card logic, with a stubbed DOM
+node tools/test_card_live.mjs     # the served card against a running HA's real data
 ```
+
+`test_card_live.mjs` is the one that matters most. Every other card test uses fixtures written
+by hand, which encode the entity id shape the card *assumes* rather than the one Home Assistant
+produces — that gap let a card pass its whole suite while failing on a real install. This one
+fetches the card from the running instance and renders it against that instance's own states and
+entity registry. It needs a long-lived access token in `secrets/ha_token.txt`.
 
 `probe_cloud.py` is how the field list above was worked out. It flattens every response to
 dotted paths and marks which ones are already exposed, so it shows what is still going unused.
@@ -212,7 +227,7 @@ be right, but until a print actually runs it is inference. Start a print and che
 ```
 custom_components/anycubic_m7pro/
   api.py            cloud client — aiohttp only, read-only
-  coordinator.py    60-second polling, reauth on expiry
+  coordinator.py    20-second polling, reauth on expiry
   entity.py         shared device info
   sensor.py         31 sensors
   binary_sensor.py  4 binary sensors
