@@ -285,6 +285,117 @@ console.log("\nproblem reported");
   check("banner shown", !card._el.problem.classList.contains("hidden"));
 }
 
+console.log("\nsplit entity id prefixes (real ids from a live install)");
+{
+  // A device that gained an area after some entities were created carries
+  // two prefixes at once. The card derived one from the anchor and built
+  // every other id from it, so half the entities were silently invisible.
+  const AREA = "working_room_anycubic_photon_mono_m7_pro";
+  const states = {
+    [`sensor.${P}_release_film_layers`]: s(2811),
+    [`sensor.${P}_status`]: s("idle", {
+      friendly_name: "Anycubic Photon Mono M7 Pro Status",
+    }),
+    [`sensor.${P}_total_prints`]: s(5),
+    [`sensor.${P}_total_resin_used`]: s(205.19),
+    [`sensor.${P}_firmware_version`]: s("4.0.8.6"),
+    [`binary_sensor.${P}_online`]: s("off"),
+    [`binary_sensor.${P}_printing`]: s("off"),
+    [`binary_sensor.${P}_problem`]: s("off"),
+    // These landed under the area-prefixed ids.
+    [`sensor.${AREA}_last_seen`]: s("2026-09-24T11:34:47+00:00"),
+    [`sensor.${AREA}_printer_state`]: s("unavailable reason:printer offline"),
+    [`sensor.${AREA}_resin_profile`]: s("Standard Resin +_1"),
+    [`sensor.${AREA}_latest_firmware_version`]: s("4.0.8.6"),
+  };
+  const registry = {};
+  for (const id of Object.keys(states)) registry[id] = { device_id: "dev1" };
+
+  const card = new Card();
+  card.setConfig({});
+  card.hass = { states, entities: registry, locale: { language: "en" } };
+
+  const rows = rowsOf(card);
+  check(
+    "last seen found under the other prefix",
+    !/Last seen<\/span><span class="v">—/.test(rows),
+    rows.match(/Last seen<\/span><span class="v">([^<]*)/)?.[1] ?? "missing"
+  );
+  check(
+    "printer_state found under the other prefix",
+    card._el.pct.textContent === "printer offline",
+    card._el.pct.textContent
+  );
+  check("entities on the first prefix still work", rows.includes("2811"));
+  check("both prefixes discovered", card._prefixes().length === 2,
+        JSON.stringify(card._prefixes()));
+
+  // Without the registry the card must still cope, by name matching.
+  const card2 = new Card();
+  card2.setConfig({});
+  card2.hass = { states, locale: { language: "en" } };
+  check(
+    "works with no entity registry available",
+    card2._el.pct.textContent === "printer offline",
+    card2._el.pct.textContent
+  );
+}
+
+console.log("\nsuffix collisions resolve to the right entity");
+{
+  // _exposure_time is a tail of _bottom_exposure_time, and
+  // _firmware_version of _latest_firmware_version. A sloppy endsWith match
+  // would return the wrong entity for both.
+  const states = {
+    ...printingStates(),
+    [`sensor.${P}_exposure_time`]: s(1.5),
+    [`sensor.${P}_bottom_exposure_time`]: s(28),
+    [`sensor.${P}_firmware_version`]: s("4.0.8.6"),
+    [`sensor.${P}_latest_firmware_version`]: s("9.9.9.9"),
+  };
+  const card = render(states);
+  // These are not rendered as rows, so assert on the lookup itself.
+  check(
+    "_exposure_time resolves to the plain one",
+    card._get("sensor", "_exposure_time")?.state === "1.5",
+    card._get("sensor", "_exposure_time")?.state
+  );
+  check(
+    "_bottom_exposure_time resolves separately",
+    card._get("sensor", "_bottom_exposure_time")?.state === "28",
+    card._get("sensor", "_bottom_exposure_time")?.state
+  );
+  check(
+    "_firmware_version is not the latest one",
+    card._get("sensor", "_firmware_version")?.state === "4.0.8.6",
+    card._get("sensor", "_firmware_version")?.state
+  );
+  check(
+    "_latest_firmware_version resolves separately",
+    card._get("sensor", "_latest_firmware_version")?.state === "9.9.9.9",
+    card._get("sensor", "_latest_firmware_version")?.state
+  );
+
+  // And the prefix derivation must not be fooled by the tail either: an
+  // entity ending _bottom_exposure_time must yield the device prefix, not
+  // one ending in "_bottom".
+  const AREA = "working_room_anycubic_photon_mono_m7_pro";
+  const card2 = new Card();
+  card2.setConfig({});
+  card2.hass = {
+    states: {
+      [`sensor.${P}_release_film_layers`]: s(2811),
+      [`sensor.${AREA}_bottom_exposure_time`]: s(28),
+    },
+    locale: { language: "en" },
+  };
+  check(
+    "longest suffix wins when deriving a prefix",
+    card2._prefixes().includes(AREA),
+    JSON.stringify(card2._prefixes())
+  );
+}
+
 console.log("\nlifecycle: order must not matter");
 {
   // The card picker's preview does not guarantee setConfig runs before the

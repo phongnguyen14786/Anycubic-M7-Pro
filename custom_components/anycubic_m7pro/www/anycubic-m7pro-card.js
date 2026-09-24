@@ -20,8 +20,56 @@ const STATUS_LABEL = {
 };
 
 // Anchor used to find the printer automatically. This suffix is unique to
-// the integration, so if it is present the rest of the entity ids follow.
+// the integration.
 const ANCHOR = "_release_film_layers";
+
+// Every suffix this integration produces, longest first so that the longest
+// match wins when one is a tail of another (_exposure_time is a tail of
+// _bottom_exposure_time, _firmware_version of _latest_firmware_version).
+//
+// One device can carry more than one entity id prefix: entities created
+// after the device was placed in an area pick the area name up as well, so
+// the same printer ends up with both anycubic_photon_mono_m7_pro_status and
+// working_room_anycubic_photon_mono_m7_pro_last_seen. Deriving one prefix
+// from the anchor and building the rest from it silently missed those.
+const SUFFIXES = [
+  "_latest_firmware_version",
+  "_firmware_update_available",
+  "_bottom_exposure_time",
+  "_release_film_layers",
+  "_estimated_duration",
+  "_estimated_finish",
+  "_total_resin_used",
+  "_job_resin_used",
+  "_firmware_version",
+  "_time_remaining",
+  "_job_thumbnail",
+  "_bottom_layers",
+  "_current_layer",
+  "_exposure_time",
+  "_total_print_time",
+  "_resin_profile",
+  "_retract_speed",
+  "_total_layers",
+  "_time_elapsed",
+  "_printer_state",
+  "_total_prints",
+  "_anti_aliasing",
+  "_model_height",
+  "_layer_height",
+  "_lift_height",
+  "_job_started",
+  "_lift_speed",
+  "_wifi_signal",
+  "_last_seen",
+  "_off_time",
+  "_job_name",
+  "_progress",
+  "_printing",
+  "_problem",
+  "_status",
+  "_online",
+].sort((a, b) => b.length - a.length);
 
 const isBlank = (state) =>
   !state || state.state === "unknown" || state.state === "unavailable";
@@ -66,6 +114,7 @@ class AnycubicM7ProCard extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._prefix = null;
+    this._prefixCache = null;
     this._built = false;
     this._el = null;
   }
@@ -73,6 +122,7 @@ class AnycubicM7ProCard extends HTMLElement {
   setConfig(config) {
     this._config = config || {};
     this._prefix = null;
+    this._prefixCache = null;
     this._ensureBuilt();
     this._render();
   }
@@ -122,10 +172,64 @@ class AnycubicM7ProCard extends HTMLElement {
     return this._prefix;
   }
 
+  /**
+   * Every entity id prefix this printer uses.
+   *
+   * Usually one, but a device that gained an area after some of its entities
+   * were created carries two, and lookups must try both. Preferred source is
+   * the entity registry, which says outright which entities share a device;
+   * where that is unavailable the ids are matched on the printer's own name
+   * instead.
+   */
+  _prefixes() {
+    if (this._prefixCache) return this._prefixCache;
+
+    const base = this._resolvePrefix();
+    if (!base) return [];
+
+    const found = new Set([base]);
+    const states = this._hass?.states || {};
+    const registry = this._hass?.entities;
+
+    const addFrom = (ids) => {
+      for (const id of ids) {
+        const dot = id.indexOf(".");
+        if (dot < 0) continue;
+        const object = id.slice(dot + 1);
+        // Longest suffix wins, so the remainder really is the prefix.
+        const suffix = SUFFIXES.find((s) => object.endsWith(s));
+        if (suffix) {
+          found.add(object.slice(0, object.length - suffix.length));
+        }
+      }
+    };
+
+    const anchorId = `sensor.${base}${ANCHOR}`;
+    const deviceId = registry?.[anchorId]?.device_id;
+    if (deviceId && registry) {
+      addFrom(
+        Object.keys(registry).filter(
+          (id) => registry[id]?.device_id === deviceId
+        )
+      );
+    } else {
+      // No registry to consult: anything carrying the printer's name and one
+      // of our suffixes is ours.
+      addFrom(Object.keys(states).filter((id) => id.includes(base)));
+    }
+
+    this._prefixCache = [...found];
+    return this._prefixCache;
+  }
+
   _get(domain, suffix) {
-    const prefix = this._resolvePrefix();
-    if (!prefix) return undefined;
-    return this._hass.states[`${domain}.${prefix}${suffix}`];
+    const states = this._hass?.states;
+    if (!states) return undefined;
+    for (const prefix of this._prefixes()) {
+      const state = states[`${domain}.${prefix}${suffix}`];
+      if (state) return state;
+    }
+    return undefined;
   }
 
   _build() {
