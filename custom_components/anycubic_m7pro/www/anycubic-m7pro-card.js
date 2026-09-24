@@ -34,7 +34,7 @@ const num = (state) => {
 
 /** Minutes as "2h 19m", or "48m" under an hour. */
 function duration(minutes) {
-  if (minutes === null) return "—";
+  if (minutes === null) return "\u2014";
   const total = Math.max(0, Math.round(minutes));
   const h = Math.floor(total / 60);
   const m = total % 60;
@@ -42,9 +42,9 @@ function duration(minutes) {
 }
 
 function clockTime(state, hass) {
-  if (isBlank(state)) return "—";
+  if (isBlank(state)) return "\u2014";
   const when = new Date(state.state);
-  if (Number.isNaN(when.getTime())) return "—";
+  if (Number.isNaN(when.getTime())) return "\u2014";
   return when.toLocaleTimeString(hass.locale?.language || undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -170,7 +170,7 @@ class AnycubicM7ProCard extends HTMLElement {
           <div class="main">
             <div class="art" id="art"></div>
             <div class="readout">
-              <div class="pct" id="pct">—</div>
+              <div class="pct" id="pct">\u2014</div>
               <div class="rows" id="rows"></div>
             </div>
           </div>
@@ -285,27 +285,27 @@ class AnycubicM7ProCard extends HTMLElement {
     const layers = num(this._get("sensor", "_total_layers"));
     const rows = [];
 
-    rows.push(["Status", STATUS_LABEL[status?.state] || "—"]);
+    rows.push(["Status", STATUS_LABEL[status?.state] || "\u2014"]);
 
     if (isPrinting) {
       rows.push([
         "Layer",
-        layer !== null && layers !== null ? `${layer} / ${layers}` : "—",
+        layer !== null && layers !== null ? `${layer} / ${layers}` : "\u2014",
       ]);
       rows.push(["ETA", clockTime(this._get("sensor", "_estimated_finish"), hass)]);
       rows.push(["Elapsed", duration(num(this._get("sensor", "_time_elapsed")))]);
       rows.push(["Remaining", duration(num(this._get("sensor", "_time_remaining")))]);
       const resin = num(this._get("sensor", "_job_resin_used"));
-      rows.push(["Resin", resin === null ? "—" : `${resin.toFixed(1)} mL`]);
+      rows.push(["Resin", resin === null ? "\u2014" : `${resin.toFixed(1)} mL`]);
     } else {
       // Idle: lifetime figures are more use than a column of dashes.
       const seen = this._get("sensor", "_last_seen");
-      rows.push(["Last seen", isBlank(seen) ? "—" : clockTime(seen, hass)]);
-      rows.push(["Total prints", this._get("sensor", "_total_prints")?.state ?? "—"]);
+      rows.push(["Last seen", isBlank(seen) ? "\u2014" : clockTime(seen, hass)]);
+      rows.push(["Total prints", this._get("sensor", "_total_prints")?.state ?? "\u2014"]);
       const total = num(this._get("sensor", "_total_resin_used"));
-      rows.push(["Resin used", total === null ? "—" : `${total.toFixed(0)} mL`]);
+      rows.push(["Resin used", total === null ? "\u2014" : `${total.toFixed(0)} mL`]);
       const film = this._get("sensor", "_release_film_layers");
-      rows.push(["Film layers", isBlank(film) ? "—" : film.state]);
+      rows.push(["Film layers", isBlank(film) ? "\u2014" : film.state]);
     }
 
     this._el.rows.innerHTML = rows
