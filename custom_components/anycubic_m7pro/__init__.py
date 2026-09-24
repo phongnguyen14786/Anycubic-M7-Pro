@@ -8,7 +8,11 @@ from homeassistant.core import HomeAssistant
 
 from .coordinator import AnycubicCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.IMAGE,
+    Platform.SENSOR,
+]
 
 type AnycubicConfigEntry = ConfigEntry[AnycubicCoordinator]
 

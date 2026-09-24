@@ -34,9 +34,12 @@ Updates every 60 seconds.
 | Entity | Example |
 |---|---|
 | Status | `idle` / `printing` / `complete` / `cancelled` / `preheating` / … |
+| Printer state | the cloud's own word for it, e.g. `free` |
 | Online | connectivity |
+| Last seen | when the printer last reached the cloud |
 | Problem | set when the running job reports an error |
 | Firmware version | `4.0.8.6` |
+| Latest firmware version | disabled by default |
 | Firmware update available | update |
 | Total prints | `5` |
 | Total print time | `217 min` |
@@ -49,11 +52,15 @@ Updates every 60 seconds.
 | Entity | Notes |
 |---|---|
 | Printing | running |
+| Job thumbnail | image entity — the sliced model preview |
 | Job name | `01_Right Tire` |
 | Progress | % |
 | Current layer / Total layers | `700` / `1109` |
 | Time elapsed / Time remaining | minutes |
+| Job started | timestamp |
 | Estimated finish | timestamp, for use in automations |
+| Estimated duration | the slicer's original estimate, to compare against actual |
+| Resin profile | `Standard Resin +_1` |
 | Job resin used | ml |
 | Model height | mm |
 | Layer height | mm |
@@ -62,6 +69,7 @@ Updates every 60 seconds.
 | Bottom exposure time | s |
 | Bottom layers | |
 | Anti-aliasing | disabled by default |
+| Lift height / Lift speed / Retract speed | mm, mm/s — disabled by default |
 
 Job entities report **nothing while the printer is idle**, rather than leaving the last finished
 print's numbers on screen. Anycubic keeps the completed job as the newest project indefinitely,
@@ -71,6 +79,14 @@ so showing it unconditionally would make an idle printer look busy forever.
 
 No camera and no light control. The printer reports `LCD_PEER_VIDEO: false` and
 `has_controllable_light: false`, so there is nothing to expose.
+
+No temperatures either. `curr_nozzle_temp` and `curr_hotbed_temp` exist in the payload but are
+FDM leftovers, always `0` on a resin machine. `material_gram_used` is likewise always `0`.
+
+The cloud also exposes 13 M7 Pro feature toggles (`failDetection`, `resinHeat`, `autoTop`,
+`dynamicRelease` and so on) and 13 hardware self-test results. Neither is exposed here yet: the
+toggles would need `sendOrder` to be useful, which this integration deliberately does not
+implement, and 11 of the 13 self-tests read "not run" on an idle printer.
 
 ---
 
@@ -122,8 +138,15 @@ the token from `secrets/token.txt` (gitignored).
 ```bash
 uv run tools/verify_minimal.py    # the cloud client works, standalone
 uv run tools/test_api.py          # the shipped api.py, against the live cloud
-uv run tools/test_entities.py     # sensor logic, against real captured payloads
+uv run tools/test_entities.py     # entity logic, against real captured payloads
+uv run tools/probe_cloud.py       # sweep every read-only endpoint, report every field
 ```
+
+`probe_cloud.py` is how the field list above was worked out. It flattens every response to
+dotted paths and marks which ones are already exposed, so it shows what is still going unused.
+It queries only read endpoints — `sendOrder`, firmware update and file delete are deliberately
+absent — and it never saves or prints the account endpoints, which carry an email and a second
+credential.
 
 `test_entities.py` stubs the small part of Home Assistant the component imports, because Home
 Assistant will not pip-install on Windows without a C toolchain. It exercises the real value
@@ -131,8 +154,8 @@ functions with real payloads — the parsers and the idle-gating, which is where
 
 ### Current state
 
-All three pass. The entity suite covers 45 checks including both the idle case and a simulated
-running print.
+All pass. The entity suite covers 70 checks including the idle case, a simulated running print,
+a printer that has never printed, error surfacing, and the thumbnail's cache behaviour.
 
 One caveat, stated plainly: **the running-print path has been tested against a reconstructed
 payload, not a live print.** The field names and values come from a real completed job pulled
@@ -148,8 +171,9 @@ custom_components/anycubic_m7pro/
   api.py            cloud client — aiohttp only, read-only
   coordinator.py    60-second polling, reauth on expiry
   entity.py         shared device info
-  sensor.py         22 sensors
+  sensor.py         31 sensors
   binary_sensor.py  4 binary sensors
+  image.py          job thumbnail
   config_flow.py    setup + reauth
   const.py          status codes
 tools/              test and exploration scripts
@@ -164,6 +188,7 @@ All under `https://cloud-universe.anycubic.com/p/p/workbench/api`:
 | `GET /user/profile/userInfo` | validate token, get account id |
 | `GET /work/printer/getPrinters` | list printers |
 | `GET /v2/printer/info?id=` | printer state, firmware, lifetime stats |
+| `GET /work/printer/printersStatus` | last check-in time and the cloud's state word |
 | `GET /work/project/getProjects` | newest job, including live layer and progress |
 
 Every request carries a signed header set: an MD5 over a fixed app id, millisecond timestamp,

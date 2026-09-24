@@ -65,11 +65,12 @@ class AnycubicAuthError(AnycubicError):
 class PrinterState:
     """Everything one poll produced, already flattened.
 
-    `job` and `message` are empty dicts rather than None when the printer has
-    never printed, so every consumer can index them without guarding first.
+    Every field defaults to an empty dict rather than None, so consumers can
+    index freely without guarding for a printer that has never printed.
     """
 
     printer: dict[str, Any]
+    status: dict[str, Any] = field(default_factory=dict)
     job: dict[str, Any] = field(default_factory=dict)
     message: dict[str, Any] = field(default_factory=dict)
 
@@ -82,9 +83,18 @@ class PrinterState:
         return self.printer.get("machine_data") or {}
 
     @property
+    def version(self) -> dict[str, Any]:
+        return self.printer.get("version") or {}
+
+    @property
     def settings(self) -> dict[str, Any]:
         """Resin exposure/lift settings for the current job."""
         return self.message.get("settings") or {}
+
+    @property
+    def slice_param(self) -> dict[str, Any]:
+        """Slicer settings for the current job, including the resin profile."""
+        return _maybe_json(self.job.get("slice_param"))
 
 
 def _maybe_json(value: Any) -> dict[str, Any]:
@@ -194,6 +204,18 @@ class AnycubicCloud:
             raise AnycubicError(f"No printer with id {printer_id}")
         return dict(data)
 
+    async def async_get_status(self, printer_id: int) -> dict[str, Any]:
+        """Live status list, which carries fields /v2/printer/info omits.
+
+        Notably `last_update_time` (when the printer last reached the cloud)
+        and `reason` (a human-readable state word).
+        """
+        payload = await self._get("/work/printer/printersStatus")
+        for entry in payload.get("data") or []:
+            if int(entry.get("id") or 0) == printer_id:
+                return dict(entry)
+        return {}
+
     async def async_get_latest_job(self, printer_id: int) -> dict[str, Any]:
         """Newest project for this printer, or {} if it has never printed.
 
@@ -209,20 +231,28 @@ class AnycubicCloud:
         return {}
 
     async def async_poll(self, printer_id: int) -> PrinterState:
-        """One full refresh: printer plus its most recent job."""
+        """One full refresh: printer, live status, and most recent job."""
         printer = await self.async_get_printer(printer_id)
+
+        # The printer's own record is the only required call. The other two
+        # add detail, so a failure there degrades the update rather than
+        # failing it -- a printer reporting its state is worth showing even
+        # when the project list is briefly unavailable.
+        try:
+            status = await self.async_get_status(printer_id)
+        except AnycubicError as err:
+            _LOGGER.debug("Could not fetch printer status: %s", err)
+            status = {}
 
         try:
             job = await self.async_get_latest_job(printer_id)
         except AnycubicError as err:
-            # A printer that still reports its own state is worth surfacing
-            # even when the project list is unavailable, so this degrades to
-            # "no job" rather than failing the whole update.
             _LOGGER.debug("Could not fetch latest job: %s", err)
             job = {}
 
         return PrinterState(
             printer=printer,
+            status=status,
             job=job,
             message=_maybe_json(job.get("device_message")),
         )

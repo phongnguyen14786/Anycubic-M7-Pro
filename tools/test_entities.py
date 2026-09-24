@@ -102,6 +102,18 @@ def _install_ha_stubs() -> None:
     sensor_mod.SensorEntityDescription = EntityDescription
     sensor_mod.SensorEntity = object
 
+    image_mod = mod("homeassistant.components.image")
+
+    class _ImageEntity:
+        _cached_image = None
+
+        def __init__(self, hass: Any = None) -> None:
+            self.hass = hass
+
+        def _handle_coordinator_update(self) -> None: ...
+
+    image_mod.ImageEntity = _ImageEntity
+
     bs_mod = mod("homeassistant.components.binary_sensor")
     bs_mod.BinarySensorDeviceClass = _Names()
     bs_mod.BinarySensorEntityDescription = EntityDescription
@@ -120,8 +132,16 @@ def _install_ha_stubs() -> None:
     class _Generic(Generic[_T]):
         def __init__(self, *args: Any, **kwargs: Any) -> None: ...
 
+    class _CoordinatorEntity(Generic[_T]):
+        """Mirrors the real base: first positional arg is the coordinator."""
+
+        def __init__(self, coordinator: Any = None, *args: Any, **kw: Any) -> None:
+            self.coordinator = coordinator
+
+        def _handle_coordinator_update(self) -> None: ...
+
     upd = mod("homeassistant.helpers.update_coordinator")
-    upd.CoordinatorEntity = _Generic
+    upd.CoordinatorEntity = _CoordinatorEntity
     upd.DataUpdateCoordinator = _Generic
     upd.UpdateFailed = type("UpdateFailed", (Exception,), {})
 
@@ -160,6 +180,7 @@ api_mod = _load("api")
 _load("entity")
 sensor_mod = _load("sensor")
 binary_mod = _load("binary_sensor")
+image_mod = _load("image")
 
 PrinterState = api_mod.PrinterState
 
@@ -172,9 +193,15 @@ def state_from_files() -> PrinterState:
     projects = json.loads(
         (ROOT / "out" / "05-projects.json").read_text(encoding="utf-8")
     )["data"]
+    status_file = ROOT / "out" / "probe" / "printers-status.json"
+    status = {}
+    if status_file.exists():
+        entries = json.loads(status_file.read_text(encoding="utf-8"))["data"]
+        status = entries[0] if entries else {}
     job = projects[0]
     return PrinterState(
         printer=printer,
+        status=status,
         job=job,
         message=api_mod._maybe_json(job.get("device_message")),
     )
@@ -218,11 +245,20 @@ def main() -> None:
     check("total resin", v["total_resin_used"] == 205.19, str(v["total_resin_used"]))
     check("release film", v["release_film_layers"] == 2811, str(v["release_film_layers"]))
 
+    check("printer state", v["printer_state"] == "free", str(v["printer_state"]))
+    check(
+        "last seen is a datetime",
+        isinstance(v["last_seen"], datetime),
+        str(v["last_seen"]),
+    )
+
     job_keys = [
         "job_name", "progress", "current_layer", "total_layers",
         "time_elapsed", "time_remaining", "estimated_finish",
         "job_resin_used", "model_height", "layer_height",
         "exposure_time", "bottom_exposure_time", "bottom_layers",
+        "job_started", "estimated_duration", "resin_profile",
+        "lift_height", "lift_speed", "retract_speed",
     ]
     blank = [k for k in job_keys if v[k] is None]
     check(
@@ -238,7 +274,12 @@ def main() -> None:
     message = dict(idle.message)
     message["progress"] = 63
     message["curr_layer"] = 700
-    live = PrinterState(printer=idle.printer, job=live_job, message=message)
+    live = PrinterState(
+        printer=idle.printer,
+        status=idle.status,
+        job=live_job,
+        message=message,
+    )
     v2 = values(live)
     b2 = binary_values(live)
 
@@ -256,14 +297,45 @@ def main() -> None:
     check("model height", v2["model_height"] == 33.27, str(v2["model_height"]))
     check("resin used", v2["job_resin_used"] is not None, str(v2["job_resin_used"]))
 
+    check("lift height", v2["lift_height"] == 4.4, str(v2["lift_height"]))
+    check("lift speed", v2["lift_speed"] == 6, str(v2["lift_speed"]))
+    check("retract speed", v2["retract_speed"] == 6, str(v2["retract_speed"]))
+    check(
+        "estimated duration ~90 min",
+        v2["estimated_duration"] is not None and 89 <= v2["estimated_duration"] <= 91,
+        str(v2["estimated_duration"]),
+    )
+    check(
+        "resin profile resolved from active_resins",
+        v2["resin_profile"] == "Standard Resin +_1",
+        str(v2["resin_profile"]),
+    )
+    check(
+        "job started is a datetime",
+        isinstance(v2["job_started"], datetime),
+        str(v2["job_started"]),
+    )
+
     finish = v2["estimated_finish"]
     check("estimated finish is a datetime", isinstance(finish, datetime), str(finish))
     if isinstance(finish, datetime):
         delta = (finish - datetime.now(timezone.utc)).total_seconds() / 60
         check("finish ~42 min out", 41 <= delta <= 43, f"{delta:.1f} min")
 
+    print("\nepoch parsing")
+    ep = sensor_mod._epoch
+    check(
+        "seconds",
+        ep(1790181329) == datetime.fromtimestamp(1790181329, tz=timezone.utc),
+        str(ep(1790181329)),
+    )
+    check("milliseconds", ep(1790181329000, milliseconds=True) == ep(1790181329))
+    check("0 means never", ep(0) is None)
+    check("None", ep(None) is None)
+    check("garbage", ep("nonsense") is None, str(ep("nonsense")))
+
     print("\nnever-printed printer (no job at all)")
-    empty = PrinterState(printer=idle.printer, job={}, message={})
+    empty = PrinterState(printer=idle.printer, status={}, job={}, message={})
     v3 = values(empty)
     b3 = binary_values(empty)
     check("status idle", v3["status"] == "idle", v3["status"])
@@ -274,10 +346,53 @@ def main() -> None:
     print("\nerror surfacing")
     errored = PrinterState(
         printer=idle.printer,
+        status={},
         job={"print_status": 1},
         message={"err_message": "Resin low"},
     )
     check("problem raised", binary_values(errored)["problem"] is True)
+
+    print("\njob thumbnail")
+
+    class _FakeCoordinator:
+        """Enough of the coordinator for the image entity to run."""
+
+        def __init__(self, state: PrinterState) -> None:
+            self.data = state
+            self.printer_id = 766189
+            self.hass = None
+
+    def thumb(state: PrinterState):
+        coord = _FakeCoordinator(state)
+        return image_mod.AnycubicJobThumbnail(coord), coord
+
+    t_idle, _ = thumb(idle)
+    check("no thumbnail while idle", t_idle._attr_image_url is None,
+          str(t_idle._attr_image_url))
+    check("no timestamp while idle", t_idle._attr_image_last_updated is None)
+
+    t_live, coord_live = thumb(live)
+    check(
+        "thumbnail while printing",
+        isinstance(t_live._attr_image_url, str)
+        and t_live._attr_image_url.startswith("http"),
+        str(t_live._attr_image_url)[:60],
+    )
+    check("timestamp set while printing", t_live._attr_image_last_updated is not None)
+
+    # A poll that changes nothing must not invalidate the cached image,
+    # otherwise the picture is re-downloaded every minute.
+    t_live._cached_image = "sentinel"
+    stamp = t_live._attr_image_last_updated
+    t_live._handle_coordinator_update()
+    check("unchanged poll keeps cache", t_live._cached_image == "sentinel")
+    check("unchanged poll keeps timestamp", t_live._attr_image_last_updated == stamp)
+
+    # Finishing the print must clear it.
+    coord_live.data = idle
+    t_live._handle_coordinator_update()
+    check("cleared when job ends", t_live._attr_image_url is None)
+    check("cache dropped when job ends", t_live._cached_image is None)
 
     print("\nunique ids")
     keys = [d.key for d in sensor_mod.SENSORS] + [

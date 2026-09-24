@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -89,6 +89,40 @@ def _finish_time(state: PrinterState) -> datetime | None:
     return dt_util.utcnow() + timedelta(minutes=remaining)
 
 
+def _epoch(value: Any, *, milliseconds: bool = False) -> datetime | None:
+    """Turn an Anycubic epoch into an aware datetime.
+
+    The cloud mixes units: `last_update_time` is milliseconds while
+    `start_time` is seconds, so the caller says which.
+    """
+    number = _parse_number(value)
+    if not number:  # 0 means "never", not 1970
+        return None
+    if milliseconds:
+        number /= 1000
+    try:
+        return datetime.fromtimestamp(number, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _resin_profile(state: PrinterState) -> str | None:
+    """Name of the resin profile the job was sliced with.
+
+    `material_name` is localised by the slicer, so it can come back in
+    Chinese. `active_resins` holds the untranslated profile string and is a
+    better answer when it is present.
+    """
+    resins = state.slice_param.get("active_resins")
+    if isinstance(resins, list) and resins:
+        # Shaped "Vendor@Profile@Machine@Quality"; the profile reads best.
+        parts = str(resins[0]).split("@")
+        if len(parts) >= 2 and parts[1].strip():
+            return parts[1].strip()
+    name = state.slice_param.get("material_name")
+    return str(name) if name else None
+
+
 def _status(state: PrinterState) -> str:
     if not _is_active(state):
         return "idle"
@@ -157,6 +191,30 @@ SENSORS: tuple[AnycubicSensorDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=lambda s: s.job.get("signal_strength"),
     ),
+    AnycubicSensorDescription(
+        key="printer_state",
+        translation_key="printer_state",
+        # Free text from the cloud ("free" when idle). Not an ENUM device
+        # class, because the full set of words it can return is unknown and
+        # an unlisted option would log an error on every poll.
+        value_fn=lambda s: s.status.get("reason") or None,
+    ),
+    AnycubicSensorDescription(
+        key="last_seen",
+        translation_key="last_seen",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda s: _epoch(
+            s.status.get("last_update_time"), milliseconds=True
+        ),
+    ),
+    AnycubicSensorDescription(
+        key="latest_firmware_version",
+        translation_key="latest_firmware_version",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda s: s.version.get("target_version"),
+    ),
     # --- current job -----------------------------------------------------
     AnycubicSensorDescription(
         key="job_name",
@@ -211,6 +269,33 @@ SENSORS: tuple[AnycubicSensorDescription, ...] = (
         translation_key="estimated_finish",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_finish_time,
+    ),
+    AnycubicSensorDescription(
+        key="job_started",
+        translation_key="job_started",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=_job_only(lambda s: _epoch(s.job.get("start_time"))),
+    ),
+    AnycubicSensorDescription(
+        key="estimated_duration",
+        translation_key="estimated_duration",
+        native_unit_of_measurement=UnitOfTime.MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        suggested_display_precision=0,
+        # The slicer's original estimate, in seconds, for comparison against
+        # how long the job actually takes.
+        value_fn=_job_only(
+            lambda s: (
+                None
+                if (est := _parse_number(s.job.get("estimate"))) is None
+                else est / 60
+            )
+        ),
+    ),
+    AnycubicSensorDescription(
+        key="resin_profile",
+        translation_key="resin_profile",
+        value_fn=_job_only(_resin_profile),
     ),
     AnycubicSensorDescription(
         key="job_resin_used",
@@ -271,6 +356,30 @@ SENSORS: tuple[AnycubicSensorDescription, ...] = (
         translation_key="anti_aliasing",
         entity_registry_enabled_default=False,
         value_fn=_job_only(lambda s: s.message.get("anti_count")),
+    ),
+    AnycubicSensorDescription(
+        key="lift_height",
+        translation_key="lift_height",
+        native_unit_of_measurement=UnitOfLength.MILLIMETERS,
+        suggested_display_precision=1,
+        entity_registry_enabled_default=False,
+        value_fn=_job_only(lambda s: _parse_number(s.settings.get("z_up_height"))),
+    ),
+    AnycubicSensorDescription(
+        key="lift_speed",
+        translation_key="lift_speed",
+        native_unit_of_measurement="mm/s",
+        suggested_display_precision=1,
+        entity_registry_enabled_default=False,
+        value_fn=_job_only(lambda s: _parse_number(s.settings.get("z_up_speed"))),
+    ),
+    AnycubicSensorDescription(
+        key="retract_speed",
+        translation_key="retract_speed",
+        native_unit_of_measurement="mm/s",
+        suggested_display_precision=1,
+        entity_registry_enabled_default=False,
+        value_fn=_job_only(lambda s: _parse_number(s.settings.get("z_down_speed"))),
     ),
 )
 

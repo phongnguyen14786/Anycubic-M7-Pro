@@ -67,6 +67,15 @@
       "total_resin_used": { "name": "Total resin used" },
       "release_film_layers": { "name": "Release film layers" },
       "wifi_signal": { "name": "Wi-Fi signal" },
+      "printer_state": { "name": "Printer state" },
+      "last_seen": { "name": "Last seen" },
+      "latest_firmware_version": { "name": "Latest firmware version" },
+      "job_started": { "name": "Job started" },
+      "estimated_duration": { "name": "Estimated duration" },
+      "resin_profile": { "name": "Resin profile" },
+      "lift_height": { "name": "Lift height" },
+      "lift_speed": { "name": "Lift speed" },
+      "retract_speed": { "name": "Retract speed" },
       "job_name": { "name": "Job name" },
       "progress": { "name": "Progress" },
       "current_layer": { "name": "Current layer" },
@@ -82,6 +91,9 @@
       "bottom_exposure_time": { "name": "Bottom exposure time" },
       "bottom_layers": { "name": "Bottom layers" },
       "anti_aliasing": { "name": "Anti-aliasing" }
+    },
+    "image": {
+      "job_thumbnail": { "name": "Job thumbnail" }
     }
   }
 }
