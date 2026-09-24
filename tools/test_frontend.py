@@ -179,7 +179,7 @@ async def main() -> None:
         cfg = hass.http.registered[0]
         check("served at the expected url", cfg.url_path == fe.CARD_URL, cfg.url_path)
         check("points at the real file", Path(cfg.path).is_file())
-        check("cache headers off", cfg.cache_headers is False)
+        check("card is cached (version query busts it)", cfg.cache_headers is True)
 
     check("add_extra_js_url called once", len(EXTRA_JS) == 1, str(EXTRA_JS))
     check(
@@ -290,5 +290,6 @@ async def main() -> None:
 
 
 asyncio.run(main())
+
 
 

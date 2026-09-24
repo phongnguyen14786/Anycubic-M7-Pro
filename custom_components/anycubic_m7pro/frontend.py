@@ -140,8 +140,15 @@ async def async_register_card(hass: HomeAssistant) -> None:
     url = _versioned_url(hass)
 
     try:
+        # Cached deliberately. Without it the browser refetches the card on
+        # every page load, and on a refresh -- when everything else comes
+        # straight from cache -- the dashboard renders before the element is
+        # defined and the card shows a configuration error. Opening a fresh
+        # tab was slow enough to win the race, which is why it only failed on
+        # refresh. The version query above is what busts the cache, the same
+        # way HACS uses ?hacstag=.
         await hass.http.async_register_static_paths(
-            [StaticPathConfig(CARD_URL, str(path), cache_headers=False)]
+            [StaticPathConfig(CARD_URL, str(path), cache_headers=True)]
         )
     except (RuntimeError, ValueError) as err:
         # A missing card costs the dashboard, not the integration, so the
