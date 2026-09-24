@@ -1,0 +1,87 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Anycubic Cloud",
+        "description": "Sign in at https://cloud-universe.anycubic.com/file, open your browser's developer tools (F12), and run this in the Console:\n\n```\nwindow.localStorage[\"XX-Token\"]\n```\n\nPaste the value below, without the surrounding quotes.",
+        "data": {
+          "token": "Token",
+          "region": "Region"
+        },
+        "data_description": {
+          "token": "Around 238 characters. It is an account credential, so treat it like a password.",
+          "region": "Choose China only if your Anycubic account was created in the China app."
+        }
+      },
+      "printer": {
+        "title": "Choose a printer",
+        "data": {
+          "printer_id": "Printer"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Update your Anycubic token",
+        "description": "The token for {name} has expired or been revoked. Fetch a new one the same way as before and paste it below.",
+        "data": {
+          "token": "Token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Anycubic Cloud. Check your internet connection and try again.",
+      "invalid_auth": "Anycubic rejected that token. Make sure you copied the whole value, with no quotes.",
+      "no_printers": "That account has no printers. Check the printer is paired in the Anycubic app, and that you picked the right region.",
+      "unknown": "Something unexpected went wrong. Check the Home Assistant logs for details."
+    },
+    "abort": {
+      "already_configured": "That printer is already set up.",
+      "reauth_successful": "Your token was updated."
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "online": { "name": "Online" },
+      "printing": { "name": "Printing" },
+      "problem": { "name": "Problem" },
+      "firmware_update_available": { "name": "Firmware update available" }
+    },
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "idle": "Idle",
+          "printing": "Printing",
+          "complete": "Complete",
+          "cancelled": "Cancelled",
+          "downloading": "Downloading",
+          "checking": "Checking",
+          "preheating": "Preheating",
+          "slicing": "Slicing",
+          "levelling": "Levelling",
+          "unknown": "Unknown"
+        }
+      },
+      "firmware_version": { "name": "Firmware version" },
+      "total_prints": { "name": "Total prints" },
+      "total_print_time": { "name": "Total print time" },
+      "total_resin_used": { "name": "Total resin used" },
+      "release_film_layers": { "name": "Release film layers" },
+      "wifi_signal": { "name": "Wi-Fi signal" },
+      "job_name": { "name": "Job name" },
+      "progress": { "name": "Progress" },
+      "current_layer": { "name": "Current layer" },
+      "total_layers": { "name": "Total layers" },
+      "time_elapsed": { "name": "Time elapsed" },
+      "time_remaining": { "name": "Time remaining" },
+      "estimated_finish": { "name": "Estimated finish" },
+      "job_resin_used": { "name": "Job resin used" },
+      "model_height": { "name": "Model height" },
+      "layer_height": { "name": "Layer height" },
+      "exposure_time": { "name": "Exposure time" },
+      "off_time": { "name": "Light off time" },
+      "bottom_exposure_time": { "name": "Bottom exposure time" },
+      "bottom_layers": { "name": "Bottom layers" },
+      "anti_aliasing": { "name": "Anti-aliasing" }
+    }
+  }
+}

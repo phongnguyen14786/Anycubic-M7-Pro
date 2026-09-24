@@ -1,0 +1,12 @@
+{
+  "domain": "anycubic_m7pro",
+  "name": "Anycubic M7 Pro",
+  "codeowners": ["@phongnguyen14786"],
+  "config_flow": true,
+  "documentation": "https://github.com/phongnguyen14786/Anycubic-M7-Pro",
+  "integration_type": "device",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/phongnguyen14786/Anycubic-M7-Pro/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

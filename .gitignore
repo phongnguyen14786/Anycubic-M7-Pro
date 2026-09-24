@@ -1,0 +1,8 @@
+secrets/
+out/
+__pycache__/
+*.pyc
+
+# Third-party reference material (modrzew/hass-anycubic-photon-p1, MIT).
+# Kept locally for development; not redistributed here.
+reference/
