@@ -90,6 +90,43 @@ implement, and 11 of the 13 self-tests read "not run" on an idle printer.
 
 ---
 
+## The dashboard card
+
+The integration ships a card and registers it itself — nothing to install, no Lovelace resource
+to add by hand.
+
+**Edit dashboard → Add card → search "Anycubic"**, or paste:
+
+```yaml
+type: custom:anycubic-m7pro-card
+```
+
+That is the whole configuration. The card finds the printer on its own. With more than one
+M7 Pro, name it:
+
+```yaml
+type: custom:anycubic-m7pro-card
+prefix: anycubic_photon_mono_m7_pro
+```
+
+The `prefix` is the entity id without the domain and without the sensor suffix — so for
+`sensor.anycubic_photon_mono_m7_pro_status` it is `anycubic_photon_mono_m7_pro`.
+
+**While printing** it shows the percentage, an animated printer with the platform rising out of
+the vat as the model is drawn from it, layer count, ETA, elapsed, remaining, resin used, a
+progress bar and the sliced model preview.
+
+**While idle** it drops the empty job rows and shows what is actually useful instead: when the
+printer was last seen, lifetime print count, total resin, and release film wear. If the printer
+is offline it says so, using the cloud's own wording.
+
+A problem banner appears across the bottom when the running job reports an error.
+
+If you would rather assemble your own, every value is a normal entity and works in any standard
+card.
+
+---
+
 ## Install
 
 ### Via HACS (recommended)
@@ -140,6 +177,8 @@ uv run tools/verify_minimal.py    # the cloud client works, standalone
 uv run tools/test_api.py          # the shipped api.py, against the live cloud
 uv run tools/test_entities.py     # entity logic, against real captured payloads
 uv run tools/probe_cloud.py       # sweep every read-only endpoint, report every field
+uv run tools/status.py            # live readout of every entity, right now
+node tools/test_card.mjs          # dashboard card logic, with a stubbed DOM
 ```
 
 `probe_cloud.py` is how the field list above was worked out. It flattens every response to
@@ -154,8 +193,12 @@ functions with real payloads — the parsers and the idle-gating, which is where
 
 ### Current state
 
-All pass. The entity suite covers 70 checks including the idle case, a simulated running print,
-a printer that has never printed, error surfacing, and the thumbnail's cache behaviour.
+All pass: 70 checks on the entity logic and 27 on the card, covering the idle case, a simulated
+running print, an offline printer, a printer that has never printed, error surfacing, and the
+thumbnail's cache behaviour.
+
+`test_card.mjs` stubs enough DOM for the card to define and render under plain Node, then
+asserts on the rendered text. No browser, no build step.
 
 One caveat, stated plainly: **the running-print path has been tested against a reconstructed
 payload, not a live print.** The field names and values come from a real completed job pulled
@@ -174,6 +217,8 @@ custom_components/anycubic_m7pro/
   sensor.py         31 sensors
   binary_sensor.py  4 binary sensors
   image.py          job thumbnail
+  frontend.py       serves and registers the dashboard card
+  www/              the dashboard card itself
   config_flow.py    setup + reauth
   const.py          status codes
 tools/              test and exploration scripts

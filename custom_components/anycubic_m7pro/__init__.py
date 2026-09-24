@@ -7,6 +7,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
 from .coordinator import AnycubicCoordinator
+from .frontend import async_register_card
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -19,6 +20,8 @@ type AnycubicConfigEntry = ConfigEntry[AnycubicCoordinator]
 
 async def async_setup_entry(hass: HomeAssistant, entry: AnycubicConfigEntry) -> bool:
     """Set up Anycubic M7 Pro from a config entry."""
+    await async_register_card(hass)
+
     coordinator = AnycubicCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
