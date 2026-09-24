@@ -255,6 +255,84 @@ console.log("\nproblem reported");
   check("banner shown", !card._el.problem.classList.contains("hidden"));
 }
 
+console.log("\nlifecycle: order must not matter");
+{
+  // The card picker's preview does not guarantee setConfig runs before the
+  // hass setter. Getting this wrong threw, and the picker rendered a
+  // spinner that never resolved.
+  const card = new Card();
+  let threw = null;
+  try {
+    card.hass = { states: printingStates(), locale: { language: "en" } };
+  } catch (err) {
+    threw = err;
+  }
+  check("hass before setConfig does not throw", threw === null,
+        threw ? threw.message : "");
+  check("still rendered", card._el && card._el.pct.textContent === "63%",
+        card._el?.pct.textContent);
+
+  card.setConfig({});
+  check("setConfig afterwards still fine", card._el.pct.textContent === "63%");
+}
+
+{
+  // And the reverse: config with no hass yet must still draw something, or
+  // the preview has zero height and spins.
+  const card = new Card();
+  let threw = null;
+  try {
+    card.setConfig({});
+  } catch (err) {
+    threw = err;
+  }
+  check("setConfig with no hass does not throw", threw === null,
+        threw ? threw.message : "");
+  check("shell drawn before hass arrives", Boolean(card._el), "");
+  check(
+    "placeholder shown rather than nothing",
+    card._el && card._el.pct.textContent.length > 0,
+    card._el?.pct.textContent
+  );
+  check(
+    "art drawn so the card has height",
+    card._el && card._el.art.innerHTML.includes("<svg")
+  );
+  card.hass = { states: printingStates(), locale: { language: "en" } };
+  check("fills in once hass arrives", card._el.pct.textContent === "63%");
+}
+
+{
+  // connectedCallback is how the picker attaches it.
+  const card = new Card();
+  let threw = null;
+  try {
+    card.connectedCallback();
+  } catch (err) {
+    threw = err;
+  }
+  check("connectedCallback before anything does not throw", threw === null,
+        threw ? threw.message : "");
+}
+
+{
+  // A render that throws must not leave a blank element behind.
+  const card = new Card();
+  card.setConfig({});
+  let threw = null;
+  try {
+    card.hass = { get states() { throw new Error("boom"); } };
+  } catch (err) {
+    threw = err;
+  }
+  check("render errors are contained", threw === null, threw ? threw.message : "");
+  check(
+    "error surfaced on the card",
+    card._el.job.textContent.startsWith("Card error:"),
+    card._el.job.textContent
+  );
+}
+
 console.log("\nno printer present");
 {
   const card = render({ "sensor.something_else": s(1) });

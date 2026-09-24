@@ -56,10 +56,30 @@ class AnycubicM7ProCard extends HTMLElement {
     return {};
   }
 
+  constructor() {
+    super();
+    // Defaults live here rather than in setConfig because Home Assistant
+    // does not guarantee the order of setConfig and the hass setter. The
+    // card picker's preview can set hass first, and reading _config.prefix
+    // off undefined threw there -- which the picker renders as a spinner
+    // that never resolves.
+    this._config = {};
+    this._hass = null;
+    this._prefix = null;
+    this._built = false;
+    this._el = null;
+  }
+
   setConfig(config) {
     this._config = config || {};
     this._prefix = null;
-    this._built = false;
+    this._ensureBuilt();
+    this._render();
+  }
+
+  connectedCallback() {
+    this._ensureBuilt();
+    this._render();
   }
 
   getCardSize() {
@@ -68,11 +88,19 @@ class AnycubicM7ProCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    this._ensureBuilt();
+    this._render();
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _ensureBuilt() {
     if (!this._built) {
       this._build();
       this._built = true;
     }
-    this._render();
   }
 
   /**
@@ -82,8 +110,9 @@ class AnycubicM7ProCard extends HTMLElement {
    * works when simply dropped on a dashboard with no configuration.
    */
   _resolvePrefix() {
-    if (this._config.prefix) return this._config.prefix;
+    if (this._config?.prefix) return this._config.prefix;
     if (this._prefix) return this._prefix;
+    if (!this._hass?.states) return null;
     const found = Object.keys(this._hass.states).find(
       (id) => id.startsWith("sensor.") && id.endsWith(ANCHOR)
     );
@@ -235,8 +264,30 @@ class AnycubicM7ProCard extends HTMLElement {
   }
 
   _render() {
+    try {
+      this._renderInner();
+    } catch (err) {
+      // A card that throws mid-render leaves an empty element behind, which
+      // the picker shows as a spinner that never resolves. Better to say so.
+      console.error("anycubic-m7pro-card render failed", err);
+      if (this._el?.job) {
+        this._el.job.textContent = `Card error: ${err.message}`;
+      }
+    }
+  }
+
+  _renderInner() {
     const hass = this._hass;
-    if (!hass || !this._el) return;
+    if (!this._el) return;
+
+    // The picker builds a preview before hass arrives. Draw the shell so the
+    // element has real size rather than waiting on data that may be seconds
+    // away.
+    if (!hass) {
+      this._el.pct.textContent = "\u2014";
+      this._el.art.innerHTML = this._art(0, false);
+      return;
+    }
 
     const prefix = this._resolvePrefix();
     if (!prefix) {
