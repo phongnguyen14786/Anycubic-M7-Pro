@@ -259,6 +259,8 @@ def main() -> None:
         "exposure_time", "bottom_exposure_time", "bottom_layers",
         "job_started", "estimated_duration", "resin_profile",
         "lift_height", "lift_speed", "retract_speed",
+        # Reported per job, so it must not linger for an offline printer.
+        "wifi_signal",
     ]
     blank = [k for k in job_keys if v[k] is None]
     check(

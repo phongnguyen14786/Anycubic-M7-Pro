@@ -189,7 +189,10 @@ SENSORS: tuple[AnycubicSensorDescription, ...] = (
         native_unit_of_measurement="%",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda s: s.job.get("signal_strength"),
+        # Reported per job, not per printer, so an ungated reading is the
+        # signal strength during the last print -- which would still show a
+        # healthy percentage for a printer that is currently unplugged.
+        value_fn=_job_only(lambda s: s.job.get("signal_strength")),
     ),
     AnycubicSensorDescription(
         key="printer_state",
